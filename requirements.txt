@@ -1,0 +1,7 @@
+tqdm
+bitarray
+numpy
+scipy
+statsmodels
+matplotlib
+sysidentpy
