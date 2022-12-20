@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from time import time, sleep
 from random import randint, choice, seed
 from math import log2, ceil
 
@@ -7,57 +6,6 @@ from typing import Optional, Iterator
 
 from bitarray import bitarray
 from tqdm import tqdm
-
-import pigpio
-
-try:
-    from gpiozero import Button as DigitalInput
-    STOP_BUTTON = DigitalInput(2)
-    DEVICE = pigpio.pi()
-
-except ImportError:
-    #Debug
-    from dataclasses import dataclass
-    @dataclass
-    class DigitalInput:
-        pin: int
-        is_pressed: bool=False
-        is_held: bool=False
-        is_active: bool=False
-        when_activated: object=None
-        when_deactivated: object=None
-        when_held: object=None
-        when_pressed: object=None
-        when_released: object=None
-
-    @dataclass
-    class RaspberryPI:
-        id: int=0
-        def pi(self): return self
-        def set_mode(self, *args, **kwargs): return 0
-        def wave_add_generic(self, *args, **kwargs): return 0
-        def wave_create(self, *args, **kwargs): return 0
-        def wave_send_once(self, *args, **kwargs): return 0
-        def wave_tx_busy(self, *args, **kwargs): return 1
-        def wave_tx_stop(self, *args, **kwargs): return 0
-        def wave_tx_at(self, *args, **kwargs): return 0
-        def wave_delete(self, *args, **kwargs): return 0
-        def stop(self, *args, **kwargs): return 0
-
-    STOP_BUTTON = DigitalInput(2)
-    DEVICE = RaspberryPI().pi()
-
-def force_loop_break():
-    """Interrompe a execução de uma onda gerada
-    """
-    if DEVICE.wave_tx_busy():
-        DEVICE.wave_tx_stop()
-        wave_id = DEVICE.wave_tx_at()
-        DEVICE.wave_delete(wave_id)
-        DEVICE.stop()
-
-OUTPUT_PORT = 4
-STOP_BUTTON.when_pressed = force_loop_break
 
 def prbs_sequence(prbs_bits:int, rng_seed:int) -> bitarray:
     """Gera uma sequência de int do tipo PRBS
@@ -175,32 +123,17 @@ def generate_output_signal(
         'random': infinite_random_loop,
         'square': infinite_square_loop
     }
-    samples = ceil((2 * frequency) * time_interval) + 1
+    samples = ceil((2 * frequency) * time_interval) + 1 #Número mínimo de amostras para garantir o sinal completo
+    samples = samples - (samples % 4) + (4 if samples % 4 else 0) #Garante que o número de amostras seja múltiplo de 4
     if (generator_type == 'prbs') and auto_adjust_prbs:
         kwargs.update({'prbs_bits': ceil(log2(samples))})
     loop_generator = generators_dict[generator_type](**kwargs)
-    output_signal = [e for e,_ in zip(loop_generator,range(samples))]
+    output_signal = bitarray([e for e,_ in zip(loop_generator,range(samples))])
     return output_signal
 
-
-def send_signal_to_port(input_signal: bitarray, frequency: float):
-    delay_us = round((1 / frequency) * 0.5 * 1e6)
-    pulse_train = list()
-    for state in input_signal:
-        if state:
-            pulse_train.append(pigpio.pulse(1<<OUTPUT_PORT, 0, delay_us))
-            continue
-        pulse_train.append(pigpio.pulse(0, 1<<OUTPUT_PORT, delay_us))
-    DEVICE.set_mode(OUTPUT_PORT, pigpio.OUTPUT)
-    DEVICE.wave_add_generic(pulse_train)
-    wave_id = DEVICE.wave_create()
-    if wave_id > 0:
-        DEVICE.wave_send_once(wave_id)
-
-
 if __name__ == '__main__':
-    debug_time_interval = 15
-    debug_frequency = 1000
+    debug_time_interval = 1
+    debug_frequency = 500
     signal = generate_output_signal(
         generator_type='prbs',#'prbs',
         frequency=debug_frequency,
@@ -209,6 +142,7 @@ if __name__ == '__main__':
         # prbs_bits=5,
         auto_adjust_prbs=True,
     )
+    # output_str = bitarray(signal).tobytes()
 
     # send_signal_to_port(
     #     input_signal=signal,
