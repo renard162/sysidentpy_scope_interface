@@ -106,7 +106,7 @@ def infinite_square_loop(**kwargs) -> Iterator[bool]:
         yield output
 
 
-def generate_output_signal(
+def generate_signal(
     generator_type:str,
     frequency:float,
     time_interval:Optional[float],
@@ -143,11 +143,13 @@ def encode_signal(input_signal: bitarray) -> list[str]:
     return encoded_signal
 
 
+# def generate_encoded_signal() -> list[str]:
+
 if __name__ == '__main__':
     debug_time_interval = 1
     debug_frequency = 15
-    signal = generate_output_signal(
-        generator_type='random',#'prbs',
+    signal = generate_signal(
+        generator_type='prbs',
         frequency=debug_frequency,
         time_interval=debug_time_interval,
         rng_seed=1,
@@ -156,19 +158,14 @@ if __name__ == '__main__':
     )
     encoded_signal = encode_signal(signal)
 
-    # send_signal_to_port(
-    #     input_signal=signal,
-    #     frequency=debug_frequency
-    # )
-
     # from sysidentpy_scope.tools.statstools import correlation, plot_correlation
     # import numpy as np
     # import matplotlib.pyplot as plt
-    # plot_time = np.arange(0, time_interval+(1/(2*frequency)), 1/(2*frequency))
-    # plt.step(plot_time, signal, where='post')
+    # plot_time = np.arange(0, debug_time_interval+(1/(2*debug_frequency)), 1/(2*debug_frequency))
+    # plt.step(plot_time, [s for s in signal], where='post')
     # plt.grid()
     # plt.show()
-    # auto_correlation, k, limits = correlation(y=signal)
+    # auto_correlation, k, limits = correlation(y=[s for s in signal])
     # plot_correlation(auto_correlation, k, limits)
 
     print('fim')
