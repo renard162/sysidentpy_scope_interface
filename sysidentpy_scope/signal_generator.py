@@ -2,9 +2,12 @@
 from random import randint, choice, seed
 from math import log2, ceil
 from itertools import zip_longest
+from time import sleep
 
 from typing import Optional, Iterator
 
+from serial import Serial
+from serial.tools import list_ports
 from bitarray import bitarray
 from tqdm import tqdm
 
@@ -135,20 +138,69 @@ def generate_signal(
     return output_signal
 
 
-def encode_signal(input_signal: bitarray) -> list[str]:
+def encode_signal(input_signal: bitarray) -> str:
     sliced_signal = [bitarray(bit_sequence) for bit_sequence in zip(*(iter(input_signal),) * 4)]
     hexed_signal = [hex(int(bit_sequence.to01(), 2))[-1] for bit_sequence in sliced_signal]
-    sliced_hex = [str_sequence for str_sequence in zip_longest(*(iter(hexed_signal),) * SERIAL_MESSAGE_LENGTH)]
-    encoded_signal = [''.join([s for s in signal_slice if s is not None]) for signal_slice in sliced_hex]
-    return encoded_signal
+    # sliced_hex = [str_sequence for str_sequence in zip_longest(*(iter(hexed_signal),) * SERIAL_MESSAGE_LENGTH)]
+    # encoded_signal = [''.join([s for s in signal_slice if s is not None]) for signal_slice in sliced_hex]
+    encoded_signal = ''.join([s for s in hexed_signal if s is not None])
+    return bytes(encoded_signal, 'utf-8')
 
 
-# def generate_encoded_signal() -> list[str]:
+def generate_encoded_signal(
+    generator_type:str,
+    frequency:float,
+    time_interval:Optional[float],
+    auto_adjust_prbs: bool=False,
+    **kwargs
+    ) -> list[str]:
+    raw_signal = generate_signal(
+            generator_type=generator_type,
+            frequency=frequency,
+            time_interval=time_interval,
+            auto_adjust_prbs=auto_adjust_prbs,
+            **kwargs
+        )
+    return encode_signal(input_signal=raw_signal)
+
+
+def get_driver_port():
+    def is_valid_port(port_description):
+        valid_descriptions_list = ['CH340', 'USB2.0-Serial', 'Arduino']
+        return len([valid_device in port_description for valid_device in valid_descriptions_list]) > 0
+    ports = [p.device for p in list_ports.comports() if is_valid_port(p.description)]
+    return ports[0]
+
+
+def send_signal_to_driver(
+    generator_type:str,
+    frequency:float,
+    time_interval:Optional[float],
+    auto_adjust_prbs: bool=False,
+    **kwargs
+    ):
+    signal = generate_encoded_signal(
+            generator_type=generator_type,
+            frequency=frequency,
+            time_interval=time_interval,
+            auto_adjust_prbs=auto_adjust_prbs,
+            **kwargs
+        )
+    driver = Serial(
+            port=get_driver_port(),
+            baudrate=9600,
+            timeout=0.1
+        )
+    driver.write(signal)
+    sleep(0.5)
+    data = driver.readline()
+    return data
+
 
 if __name__ == '__main__':
     debug_time_interval = 1
-    debug_frequency = 15
-    signal = generate_signal(
+    debug_frequency = 1#15
+    signal = send_signal_to_driver(
         generator_type='prbs',
         frequency=debug_frequency,
         time_interval=debug_time_interval,
@@ -156,7 +208,6 @@ if __name__ == '__main__':
         # prbs_bits=5,
         auto_adjust_prbs=True,
     )
-    encoded_signal = encode_signal(signal)
 
     # from sysidentpy_scope.tools.statstools import correlation, plot_correlation
     # import numpy as np
