@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 from random import randint, choice, seed
 from math import log2, ceil
+from itertools import zip_longest
 
 from typing import Optional, Iterator
 
 from bitarray import bitarray
 from tqdm import tqdm
+
+SERIAL_MESSAGE_LENGTH = 10
 
 def prbs_sequence(prbs_bits:int, rng_seed:int) -> bitarray:
     """Gera uma sequência de int do tipo PRBS
@@ -131,18 +134,27 @@ def generate_output_signal(
     output_signal = bitarray([e for e,_ in zip(loop_generator,range(samples))])
     return output_signal
 
+
+def encode_signal(input_signal: bitarray) -> list[str]:
+    sliced_signal = [bitarray(bit_sequence) for bit_sequence in zip(*(iter(input_signal),) * 4)]
+    hexed_signal = [hex(int(bit_sequence.to01(), 2))[-1] for bit_sequence in sliced_signal]
+    sliced_hex = [str_sequence for str_sequence in zip_longest(*(iter(hexed_signal),) * SERIAL_MESSAGE_LENGTH)]
+    encoded_signal = [''.join([s for s in signal_slice if s is not None]) for signal_slice in sliced_hex]
+    return encoded_signal
+
+
 if __name__ == '__main__':
     debug_time_interval = 1
-    debug_frequency = 500
+    debug_frequency = 15
     signal = generate_output_signal(
-        generator_type='prbs',#'prbs',
+        generator_type='random',#'prbs',
         frequency=debug_frequency,
         time_interval=debug_time_interval,
         rng_seed=1,
         # prbs_bits=5,
         auto_adjust_prbs=True,
     )
-    # output_str = bitarray(signal).tobytes()
+    encoded_signal = encode_signal(signal)
 
     # send_signal_to_port(
     #     input_signal=signal,
