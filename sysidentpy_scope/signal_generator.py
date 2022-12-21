@@ -11,7 +11,8 @@ from serial.tools import list_ports
 from bitarray import bitarray
 from tqdm import tqdm
 
-SERIAL_MESSAGE_LENGTH = 10
+# SERIAL_MESSAGE_LENGTH = 10
+UC_DRIVER_BITS = 8 #Nescessita ser multiplo de 4
 
 def prbs_sequence(prbs_bits:int, rng_seed:int) -> bitarray:
     """Gera uma sequência de int do tipo PRBS
@@ -130,7 +131,7 @@ def generate_signal(
         'square': infinite_square_loop
     }
     samples = ceil((2 * frequency) * time_interval) + 1 #Número mínimo de amostras para garantir o sinal completo
-    samples = samples - (samples % 4) + (4 if samples % 4 else 0) #Garante que o número de amostras seja múltiplo de 4
+    samples = samples - (samples % UC_DRIVER_BITS) + (UC_DRIVER_BITS if samples % UC_DRIVER_BITS else 0)
     if (generator_type == 'prbs') and auto_adjust_prbs:
         kwargs.update({'prbs_bits': ceil(log2(samples))})
     loop_generator = generators_dict[generator_type](**kwargs)
@@ -138,12 +139,18 @@ def generate_signal(
     return output_signal
 
 
+def encode_signal_slice(signal_slice: bitarray) -> str:
+    sub_slice = [bitarray(s) for s in zip(*(iter(signal_slice),) * 4)]
+    hex_str_slice = [hex(int(b.to01(), 2))[-1] for b in sub_slice]
+    return ''.join(hex_str_slice)
+
+
 def encode_signal(input_signal: bitarray) -> str:
-    sliced_signal = [bitarray(bit_sequence) for bit_sequence in zip(*(iter(input_signal),) * 4)]
-    hexed_signal = [hex(int(bit_sequence.to01(), 2))[-1] for bit_sequence in sliced_signal]
-    # sliced_hex = [str_sequence for str_sequence in zip_longest(*(iter(hexed_signal),) * SERIAL_MESSAGE_LENGTH)]
+    sliced_signal = [bitarray(bit_sequence) for bit_sequence in zip(*(iter(input_signal),) * UC_DRIVER_BITS)]
+    hexed_signal = [encode_signal_slice(bit_sequence) for bit_sequence in sliced_signal]
+    # sliced_hex = [str_sequence for str_sequence in zip_longest(*(iter(hexed_signal),) * (SERIAL_MESSAGE_LENGTH // 2))]
     # encoded_signal = [''.join([s for s in signal_slice if s is not None]) for signal_slice in sliced_hex]
-    encoded_signal = ''.join([s for s in hexed_signal if s is not None])
+    encoded_signal = ''.join(hexed_signal)
     return bytes(encoded_signal, 'utf-8')
 
 
@@ -179,28 +186,32 @@ def send_signal_to_driver(
     auto_adjust_prbs: bool=False,
     **kwargs
     ):
+    def serial_driver():
+        return Serial(
+                    port=get_driver_port(),
+                    baudrate=9600,
+                )
+
     signal = generate_encoded_signal(
-            generator_type=generator_type,
-            frequency=frequency,
-            time_interval=time_interval,
-            auto_adjust_prbs=auto_adjust_prbs,
-            **kwargs
-        )
+                generator_type=generator_type,
+                frequency=frequency,
+                time_interval=time_interval,
+                auto_adjust_prbs=auto_adjust_prbs,
+                **kwargs
+            )
+
+    # with serial_driver() as driver:
     driver = Serial(
-            port=get_driver_port(),
-            baudrate=9600,
-            timeout=0.1
-        )
+                    port=get_driver_port(),
+                    baudrate=9600,
+                )
     driver.write(signal)
-    sleep(0.5)
-    data = driver.readline()
-    return data
 
 
 if __name__ == '__main__':
     debug_time_interval = 1
-    debug_frequency = 1#15
-    signal = send_signal_to_driver(
+    debug_frequency = 2
+    debug_signal = generate_encoded_signal(
         generator_type='prbs',
         frequency=debug_frequency,
         time_interval=debug_time_interval,
