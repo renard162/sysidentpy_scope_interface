@@ -151,7 +151,7 @@ def encode_signal(input_signal: bitarray) -> str:
     # sliced_hex = [str_sequence for str_sequence in zip_longest(*(iter(hexed_signal),) * (SERIAL_MESSAGE_LENGTH // 2))]
     # encoded_signal = [''.join([s for s in signal_slice if s is not None]) for signal_slice in sliced_hex]
     encoded_signal = ''.join(hexed_signal)
-    return bytes(encoded_signal, 'utf-8')
+    return encoded_signal
 
 
 def generate_encoded_signal(
@@ -168,7 +168,10 @@ def generate_encoded_signal(
             auto_adjust_prbs=auto_adjust_prbs,
             **kwargs
         )
-    return encode_signal(input_signal=raw_signal)
+    encoded_signal = encode_signal(input_signal=raw_signal)
+    mili_half_period = round((1 / (frequency * 2)) * 1000)
+    serial_output = f'T{mili_half_period:04d}S{encoded_signal}X'
+    return bytes(serial_output, 'utf-8')
 
 
 def get_driver_port():
@@ -210,9 +213,9 @@ def send_signal_to_driver(
 
 if __name__ == '__main__':
     debug_time_interval = 1
-    debug_frequency = 2
+    debug_frequency = 60
     debug_signal = generate_encoded_signal(
-        generator_type='prbs',
+        generator_type='square',
         frequency=debug_frequency,
         time_interval=debug_time_interval,
         rng_seed=1,
