@@ -11,7 +11,16 @@ from serial.tools import list_ports
 from bitarray import bitarray
 from tqdm import tqdm
 
-# SERIAL_MESSAGE_LENGTH = 10
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sysidentpy.model_structure_selection import FROLS
+from sysidentpy.basis_function._basis_function import Polynomial
+from sysidentpy.metrics import root_relative_squared_error
+from sysidentpy.utils.display_results import results
+from sysidentpy.utils.plotting import plot_residues_correlation, plot_results
+from sysidentpy.residues.residues_correlation import compute_residues_autocorrelation, compute_cross_correlation
+
 UC_DRIVER_BITS = 8 #Nescessita ser multiplo de 4
 
 def prbs_sequence(prbs_bits:int, rng_seed:int) -> bitarray:
@@ -148,8 +157,6 @@ def encode_signal_slice(signal_slice: bitarray) -> str:
 def encode_signal(input_signal: bitarray) -> str:
     sliced_signal = [bitarray(bit_sequence) for bit_sequence in zip(*(iter(input_signal),) * UC_DRIVER_BITS)]
     hexed_signal = [encode_signal_slice(bit_sequence) for bit_sequence in sliced_signal]
-    # sliced_hex = [str_sequence for str_sequence in zip_longest(*(iter(hexed_signal),) * (SERIAL_MESSAGE_LENGTH // 2))]
-    # encoded_signal = [''.join([s for s in signal_slice if s is not None]) for signal_slice in sliced_hex]
     encoded_signal = ''.join(hexed_signal)
     return encoded_signal
 
@@ -171,7 +178,7 @@ def generate_encoded_signal(
     encoded_signal = encode_signal(input_signal=raw_signal)
     mili_half_period = round((1 / (frequency * 2)) * 1000)
     serial_output = f'T{mili_half_period:04d}S{encoded_signal}X'
-    return bytes(serial_output, 'utf-8')
+    return bytes(serial_output, 'utf-8'), raw_signal.tolist()
 
 
 def get_driver_port():
@@ -182,40 +189,37 @@ def get_driver_port():
     return ports[0]
 
 
-def send_signal_to_driver(
-    generator_type:str,
-    frequency:float,
-    time_interval:Optional[float],
-    auto_adjust_prbs: bool=False,
-    **kwargs
-    ):
+def send_signal_to_driver(encoded_signal: bytes) -> str:
     def serial_driver():
         return Serial(
                     port=get_driver_port(),
                     baudrate=9600,
+                    timeout=30,
                 )
+    with serial_driver() as driver:
+        sleep(3)
+        driver.write(encoded_signal)
+        while True:
+            cmd = driver.read(1)
+            if cmd != b'T':
+                sleep(1)
+                continue
+            serial_message = driver.read_until(expected=b'X')
+            break
+    return serial_message.decode('utf-8')[:-1]
 
-    signal = generate_encoded_signal(
-                generator_type=generator_type,
-                frequency=frequency,
-                time_interval=time_interval,
-                auto_adjust_prbs=auto_adjust_prbs,
-                **kwargs
-            )
 
-    # with serial_driver() as driver:
-    driver = Serial(
-                    port=get_driver_port(),
-                    baudrate=9600,
-                )
-    driver.write(signal)
+def decode_sampled_data(sampled_data: str) -> list:
+    hex_sampled_data = [''.join(d) for d in zip(*(iter(sampled_data),) * 2)]
+    converted_data = [float(int(x, 16)/255) for x in hex_sampled_data]
+    return converted_data
 
 
 if __name__ == '__main__':
     debug_time_interval = 1
-    debug_frequency = 60
-    debug_signal = generate_encoded_signal(
-        generator_type='square',
+    debug_frequency = 100
+    encoded_signal, u = generate_encoded_signal(
+        generator_type='prbs',
         frequency=debug_frequency,
         time_interval=debug_time_interval,
         rng_seed=1,
@@ -223,14 +227,42 @@ if __name__ == '__main__':
         auto_adjust_prbs=True,
     )
 
-    # from sysidentpy_scope.tools.statstools import correlation, plot_correlation
-    # import numpy as np
-    # import matplotlib.pyplot as plt
-    # plot_time = np.arange(0, debug_time_interval+(1/(2*debug_frequency)), 1/(2*debug_frequency))
-    # plt.step(plot_time, [s for s in signal], where='post')
-    # plt.grid()
-    # plt.show()
-    # auto_correlation, k, limits = correlation(y=[s for s in signal])
-    # plot_correlation(auto_correlation, k, limits)
+    encoded_output = send_signal_to_driver(encoded_signal)
+    y = decode_sampled_data(encoded_output)
+    k = range(len(y))
+
+    train_ratio = 0.7
+    n_train = ceil(train_ratio * len(u))
+    u, y = np.asarray(u, dtype=float), np.asarray(y, dtype=float)
+    u_train, y_train = u[:n_train].reshape(-1,1), y[:n_train].reshape(-1,1)
+    u_eval, y_eval = u[n_train:].reshape(-1,1), y[n_train:].reshape(-1,1)
+
+    model = FROLS(
+        order_selection=True,
+        n_info_values=3,
+        extended_least_squares=False,
+        ylag=2, xlag=2,
+        info_criteria='bic',
+        estimator='least_squares',
+        basis_function=Polynomial(degree=2)
+    )
+    model.fit(X=u_train, y=y_train)
+    y_predicted = model.predict(X=u_eval, y=y_eval)
+    rrse = root_relative_squared_error(y_eval, y_predicted)
+    result_model = pd.DataFrame(
+        results(
+            model.final_model, model.theta, model.err,
+            model.n_terms, err_precision=8, dtype='sci'
+        ),
+        columns=['Regressors', 'Parameters', 'ERR'],
+    )
+    print(result_model.to_string())
+
+    plt.ion()
+    plot_results(y=y_eval, yhat=y_predicted, n=1000)
+    ee = compute_residues_autocorrelation(y_eval, y_predicted)
+    plot_residues_correlation(data=ee, title="Residues", ylabel="$e^2$")
+    x1e = compute_cross_correlation(y_eval, y_predicted, u_eval)
+    plot_residues_correlation(data=x1e, title="Residues", ylabel="$x_1e$")
 
     print('fim')
