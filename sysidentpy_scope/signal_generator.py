@@ -217,7 +217,7 @@ def decode_sampled_data(sampled_data: str) -> list:
 
 if __name__ == '__main__':
     debug_time_interval = 1
-    debug_frequency = 100
+    debug_frequency = 500
     encoded_signal, u = generate_encoded_signal(
         generator_type='prbs',
         frequency=debug_frequency,
@@ -231,7 +231,7 @@ if __name__ == '__main__':
     y = decode_sampled_data(encoded_output)
     k = range(len(y))
 
-    train_ratio = 0.7
+    train_ratio = 0.8
     n_train = ceil(train_ratio * len(u))
     u, y = np.asarray(u, dtype=float), np.asarray(y, dtype=float)
     u_train, y_train = u[:n_train].reshape(-1,1), y[:n_train].reshape(-1,1)
@@ -256,7 +256,8 @@ if __name__ == '__main__':
         ),
         columns=['Regressors', 'Parameters', 'ERR'],
     )
-    print(result_model.to_string())
+    print(f'\nRRSE: {rrse}\n')
+    print(f'\n{result_model.to_string()}\n')
 
     plt.ion()
     plot_results(y=y_eval, yhat=y_predicted, n=1000)
@@ -264,5 +265,7 @@ if __name__ == '__main__':
     plot_residues_correlation(data=ee, title="Residues", ylabel="$e^2$")
     x1e = compute_cross_correlation(y_eval, y_predicted, u_eval)
     plot_residues_correlation(data=x1e, title="Residues", ylabel="$x_1e$")
+    plt.ioff()
+    plt.show(block=True)
 
     print('fim')
