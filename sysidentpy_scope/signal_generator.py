@@ -210,14 +210,14 @@ def send_signal_to_driver(encoded_signal: bytes) -> str:
 
 
 def decode_sampled_data(sampled_data: str) -> list:
-    hex_sampled_data = [''.join(d) for d in zip(*(iter(sampled_data),) * 2)]
-    converted_data = [float(int(x, 16)/255) for x in hex_sampled_data]
+    hex_sampled_data = [''.join(d) for d in zip(*(iter(sampled_data),) * 3)]
+    converted_data = [float(int(x, 16)/1024) for x in hex_sampled_data]
     return converted_data
 
 
 if __name__ == '__main__':
     debug_time_interval = 1
-    debug_frequency = 500
+    debug_frequency = 75
     encoded_signal, u = generate_encoded_signal(
         generator_type='prbs',
         frequency=debug_frequency,
@@ -229,11 +229,11 @@ if __name__ == '__main__':
 
     encoded_output = send_signal_to_driver(encoded_signal)
     y = decode_sampled_data(encoded_output)
-    k = range(len(y))
+    k = np.arange(len(y))
 
     train_ratio = 0.8
     n_train = ceil(train_ratio * len(u))
-    u, y = np.asarray(u, dtype=float), np.asarray(y, dtype=float)
+    u, y = np.asarray(u, dtype=float)*5, np.asarray(y, dtype=float)*5
     u_train, y_train = u[:n_train].reshape(-1,1), y[:n_train].reshape(-1,1)
     u_eval, y_eval = u[n_train:].reshape(-1,1), y[n_train:].reshape(-1,1)
 
@@ -260,6 +260,12 @@ if __name__ == '__main__':
     print(f'\n{result_model.to_string()}\n')
 
     plt.ion()
+    plt.figure()
+    plt.step(k, u.flatten(), where='post', marker='o', markersize=3, markerfacecolor='black', label='u')
+    plt.plot(k, y.flatten(), 'ro--', markersize=3, markerfacecolor='black', label='y')
+    plt.legend()
+    plt.grid()
+    plt.show()
     plot_results(y=y_eval, yhat=y_predicted, n=1000)
     ee = compute_residues_autocorrelation(y_eval, y_predicted)
     plot_residues_correlation(data=ee, title="Residues", ylabel="$e^2$")
