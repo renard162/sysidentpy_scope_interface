@@ -3,6 +3,8 @@ from random import randint, choice, seed
 from math import log2, ceil
 from itertools import zip_longest
 from time import sleep
+import sys 
+from contextlib import suppress
 
 from typing import Optional, Iterator
 
@@ -120,9 +122,8 @@ def infinite_square_loop(**kwargs) -> Iterator[bool]:
 
 
 def generate_signal(
-    generator_type:str,
-    frequency:float,
-    time_interval:Optional[float],
+    generator_type: str,
+    samples: int,
     auto_adjust_prbs: bool=False,
     **kwargs
     ):
@@ -130,8 +131,6 @@ def generate_signal(
 
     Args:
         generator_type (str): Padrão do sinal gerado: 'prbs', 'random', 'square'
-        frequency (float): Frequência do sinal [Hz]
-        time_interval (float): Tempo que o sinal ficará sendo gerado [s].
         auto_adjust_prbs (bool, optional): Ajusta a quantidade de bits do gerador PRBS automaticamente? Defaults to False.
     """
     generators_dict = {
@@ -139,7 +138,7 @@ def generate_signal(
         'random': infinite_random_loop,
         'square': infinite_square_loop
     }
-    samples = ceil((2 * frequency) * time_interval) + 1 #Número mínimo de amostras para garantir o sinal completo
+    samples += 1 #Número mínimo de amostras para garantir o sinal completo
     samples = samples - (samples % UC_DRIVER_BITS) + (UC_DRIVER_BITS if samples % UC_DRIVER_BITS else 0)
     if (generator_type == 'prbs') and auto_adjust_prbs:
         kwargs.update({'prbs_bits': ceil(log2(samples))})
@@ -163,20 +162,19 @@ def encode_signal(input_signal: bitarray) -> str:
 
 def generate_encoded_signal(
     generator_type:str,
-    frequency:float,
-    time_interval:Optional[float],
+    samples:int,
+    time_interval:float,
     auto_adjust_prbs: bool=False,
     **kwargs
     ) -> list[str]:
     raw_signal = generate_signal(
             generator_type=generator_type,
-            frequency=frequency,
-            time_interval=time_interval,
+            samples=samples,
             auto_adjust_prbs=auto_adjust_prbs,
             **kwargs
         )
     encoded_signal = encode_signal(input_signal=raw_signal)
-    mili_half_period = round((1 / (frequency * 2)) * 1000)
+    mili_half_period = round(time_interval * 1000)
     serial_output = f'T{mili_half_period:04d}S{encoded_signal}X'
     return bytes(serial_output, 'utf-8'), raw_signal.tolist()
 
@@ -215,15 +213,29 @@ def decode_sampled_data(sampled_data: str) -> list:
     return converted_data
 
 
+def is_debugging() -> bool:
+    with suppress(AttributeError):
+        return bool(sys.gettrace())
+
+
 if __name__ == '__main__':
-    debug_time_interval = 1
-    debug_frequency = 75
+
+    # debug_time_interval = 1e-3
+    # debug_samples = 300
+
+    # """ RLC """
+    # debug_time_interval = 15e-3
+    # debug_samples = 300
+    
+    # """ RC """
+    debug_time_interval = 3e-3
+    debug_samples = 300
+
     encoded_signal, u = generate_encoded_signal(
         generator_type='prbs',
-        frequency=debug_frequency,
+        samples=debug_samples,
         time_interval=debug_time_interval,
         rng_seed=1,
-        # prbs_bits=5,
         auto_adjust_prbs=True,
     )
 
@@ -239,14 +251,36 @@ if __name__ == '__main__':
 
     model = FROLS(
         order_selection=True,
-        n_info_values=3,
+        n_info_values=15,
         extended_least_squares=False,
-        ylag=2, xlag=2,
+        ylag=5, xlag=5,
         info_criteria='bic',
         estimator='least_squares',
-        basis_function=Polynomial(degree=2)
+        basis_function=Polynomial(degree=3)
     )
     model.fit(X=u_train, y=y_train)
+
+    plt.figure()
+    plt.step(k, u.flatten(), where='post', marker='o', markersize=3, markerfacecolor='black', label='u')
+    plt.plot(k, y.flatten(), 'ro--', markersize=3, markerfacecolor='black', label='y')
+    plt.legend()
+    plt.grid()
+    plt.show(block=False)
+
+    plt.figure()
+    xaxis = np.arange(1, model.n_info_values + 1)
+    plt.plot(xaxis, model.info_values, 'bo--')
+    plt.grid()
+    plt.xlabel('n_terms')
+    plt.ylabel('Information Criteria')
+
+    if is_debugging():
+        plt.show(block=True)
+        model.n_terms = 3
+    else:
+        plt.show(block=False)
+        model.n_terms = int(input('\nNúmero de regressores do modelo: '))
+
     y_predicted = model.predict(X=u_eval, y=y_eval)
     rrse = root_relative_squared_error(y_eval, y_predicted)
     result_model = pd.DataFrame(
@@ -260,12 +294,6 @@ if __name__ == '__main__':
     print(f'\n{result_model.to_string()}\n')
 
     plt.ion()
-    plt.figure()
-    plt.step(k, u.flatten(), where='post', marker='o', markersize=3, markerfacecolor='black', label='u')
-    plt.plot(k, y.flatten(), 'ro--', markersize=3, markerfacecolor='black', label='y')
-    plt.legend()
-    plt.grid()
-    plt.show()
     plot_results(y=y_eval, yhat=y_predicted, n=1000)
     ee = compute_residues_autocorrelation(y_eval, y_predicted)
     plot_residues_correlation(data=ee, title="Residues", ylabel="$e^2$")
