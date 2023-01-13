@@ -3,7 +3,6 @@ bitarray
 numpy
 pandas
 scipy
-statsmodels
 matplotlib
 pyqt5
 sysidentpy

@@ -1,0 +1,9 @@
+Número de regressores do modelo: 3
+
+RRSE: 0.008886836924000862
+
+
+  Regressors  Parameters             ERR
+0     y(k-1)  7.1524E-01  9.42969495E-01
+1  x1(k-1)^2  4.8375E-02  5.65932878E-02
+2    x1(k-2)  2.9853E-02  4.28708204E-04

@@ -220,16 +220,17 @@ def is_debugging() -> bool:
 
 if __name__ == '__main__':
 
-    # debug_time_interval = 1e-3
-    # debug_samples = 300
-
-    # """ RLC """
-    # debug_time_interval = 15e-3
-    # debug_samples = 300
-    
-    # """ RC """
-    debug_time_interval = 3e-3
+    # """ RLC Subamortecido """
+    debug_time_interval = 10e-3
     debug_samples = 300
+
+    # """ RLC super amortecido"""
+#     debug_time_interval = 15e-3
+#     debug_samples = 300
+
+    # """ RC """
+#     debug_time_interval = 3e-3
+#     debug_samples = 300
 
     encoded_signal, u = generate_encoded_signal(
         generator_type='prbs',
